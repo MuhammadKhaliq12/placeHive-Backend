@@ -12,11 +12,42 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const accommodationRoutes = require('./routes/accommodationRoutes');
 const mealProviderRoutes = require('./routes/mealProviderRoutes');
-const expenseRoutes = require('./routes/expenseRoutes');
-const transportRoutes = require('./routes/transportRoutes');
-const bookmarkRoutes = require('./routes/bookmarkRoutes');
-const recommendationRoutes = require('./routes/recommendationRoutes');
-const adminRoutes = require('./routes/adminRoutes');
+// Optional routes - add when corresponding route files are implemented
+let expenseRoutes;
+let transportRoutes;
+let bookmarkRoutes;
+let recommendationRoutes;
+let adminRoutes;
+
+try {
+  expenseRoutes = require('./routes/expenseRoutes');
+} catch (error) {
+  console.warn('⚠️ Expense routes not loaded:', error.message);
+}
+
+try {
+  transportRoutes = require('./routes/transportRoutes');
+} catch (error) {
+  console.warn('⚠️ Transport routes not loaded:', error.message);
+}
+
+try {
+  bookmarkRoutes = require('./routes/bookmarkRoutes');
+} catch (error) {
+  console.warn('⚠️ Bookmark routes not loaded:', error.message);
+}
+
+try {
+  recommendationRoutes = require('./routes/recommendationRoutes');
+} catch (error) {
+  console.warn('⚠️ Recommendation routes not loaded:', error.message);
+}
+
+try {
+  adminRoutes = require('./routes/adminRoutes');
+} catch (error) {
+  console.warn('⚠️ Admin routes not loaded:', error.message);
+}
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorMiddleware');
@@ -72,11 +103,25 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/accommodations', accommodationRoutes);
 app.use('/api/meal-providers', mealProviderRoutes);
-app.use('/api/expenses', expenseRoutes);
-app.use('/api/transport', transportRoutes);
-app.use('/api/bookmarks', bookmarkRoutes);
-app.use('/api/recommendations', recommendationRoutes);
-app.use('/api/admin', adminRoutes);
+if (expenseRoutes) {
+  app.use('/api/expenses', expenseRoutes);
+}
+
+if (transportRoutes) {
+  app.use('/api/transport', transportRoutes);
+}
+
+if (bookmarkRoutes) {
+  app.use('/api/bookmarks', bookmarkRoutes);
+}
+
+if (recommendationRoutes) {
+  app.use('/api/recommendations', recommendationRoutes);
+}
+
+if (adminRoutes) {
+  app.use('/api/admin', adminRoutes);
+}
 
 // Error handling middleware
 app.use(notFound);

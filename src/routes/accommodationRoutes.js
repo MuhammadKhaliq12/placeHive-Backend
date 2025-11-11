@@ -32,6 +32,12 @@ const createAccommodationValidation = [
   body('location.city')
     .notEmpty()
     .withMessage('City is required'),
+  body('location.coordinates.latitude')
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Latitude must be between -90 and 90'),
+  body('location.coordinates.longitude')
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Longitude must be between -180 and 180'),
   body('pricing.rent')
     .isFloat({ min: 0 })
     .withMessage('Rent must be a positive number'),
@@ -57,6 +63,32 @@ const searchValidation = [
     .optional()
     .isFloat({ min: 0 })
     .withMessage('Maximum rent must be a positive number'),
+  query('latitude')
+    .optional()
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Latitude must be between -90 and 90')
+    .bail()
+    .custom((value, { req }) => {
+      if (value !== undefined && req.query.longitude === undefined) {
+        throw new Error('Longitude is required when latitude is provided');
+      }
+      return true;
+    }),
+  query('longitude')
+    .optional()
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Longitude must be between -180 and 180')
+    .bail()
+    .custom((value, { req }) => {
+      if (value !== undefined && req.query.latitude === undefined) {
+        throw new Error('Latitude is required when longitude is provided');
+      }
+      return true;
+    }),
+  query('radius')
+    .optional()
+    .isFloat({ min: 0.1 })
+    .withMessage('Radius must be greater than 0'),
   query('page')
     .optional()
     .isInt({ min: 1 })

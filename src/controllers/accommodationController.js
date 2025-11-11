@@ -1,5 +1,59 @@
 const Accommodation = require('../models/Accommodation');
 
+const parseCoordinate = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  const parsed = typeof value === 'number' ? value : parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const normalizeLocationCoordinates = (payload) => {
+  if (!payload || !payload.location) {
+    return;
+  }
+
+  const { location } = payload;
+  const coords = location.coordinates;
+
+  const latitude =
+    parseCoordinate(location.latitude) ??
+    (coords && Array.isArray(coords.coordinates)
+      ? parseCoordinate(coords.coordinates[1])
+      : undefined) ??
+    (coords ? parseCoordinate(coords.latitude ?? coords.lat) : undefined);
+
+  const longitude =
+    parseCoordinate(location.longitude) ??
+    (coords && Array.isArray(coords.coordinates)
+      ? parseCoordinate(coords.coordinates[0])
+      : undefined) ??
+    (coords ? parseCoordinate(coords.longitude ?? coords.lng) : undefined);
+
+  const geoArray =
+    coords && Array.isArray(coords.coordinates)
+      ? coords.coordinates.map(value => parseCoordinate(value))
+      : undefined;
+
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    location.coordinates = {
+      type: 'Point',
+      coordinates: [longitude, latitude]
+    };
+  } else if (geoArray && geoArray.length === 2 && geoArray.every(Number.isFinite)) {
+    location.coordinates = {
+      type: 'Point',
+      coordinates: [geoArray[0], geoArray[1]]
+    };
+  } else {
+    delete location.coordinates;
+  }
+
+  delete location.latitude;
+  delete location.longitude;
+};
+
 // @desc    Get all accommodations with filtering
 // @route   GET /api/accommodations
 // @access  Public
@@ -15,11 +69,32 @@ const getAccommodations = async (req, res) => {
       ac,
       page = 1,
       limit = 12,
-      sort = '-createdAt'
+      sort = '-createdAt',
+      latitude,
+      longitude,
+      radius = 5
     } = req.query;
 
     // Build filter object
     const filter = { status: 'active' };
+
+    const parsedLatitude = parseCoordinate(latitude);
+    const parsedLongitude = parseCoordinate(longitude);
+    const parsedRadius = parseCoordinate(radius);
+
+    if (Number.isFinite(parsedLatitude) && Number.isFinite(parsedLongitude)) {
+      filter['location.coordinates'] = {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [parsedLongitude, parsedLatitude]
+          },
+          ...(Number.isFinite(parsedRadius) && parsedRadius > 0
+            ? { $maxDistance: parsedRadius * 1000 }
+            : {})
+        }
+      };
+    }
 
     if (city) {
       filter['location.city'] = { $regex: city, $options: 'i' };
@@ -41,12 +116,16 @@ const getAccommodations = async (req, res) => {
     if (ac === 'true') filter['amenities.room.airConditioning'] = true;
 
     // Execute query
+    const limitNum = Number(limit) > 0 ? Math.min(Number(limit), 50) : 12;
+    const pageNum = Number(page) > 0 ? Number(page) : 1;
+    const skip = (pageNum - 1) * limitNum;
+
     const accommodations = await Accommodation.find(filter)
       .populate('provider', 'name profile.avatar')
       .select('-__v')
       .sort(sort)
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .limit(limitNum)
+      .skip(skip);
 
     const total = await Accommodation.countDocuments(filter);
 
@@ -54,8 +133,8 @@ const getAccommodations = async (req, res) => {
       success: true,
       count: accommodations.length,
       total,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page),
+      totalPages: Math.ceil(total / limitNum),
+      currentPage: pageNum,
       data: accommodations
     });
   } catch (error) {
@@ -110,6 +189,9 @@ const getAccommodation = async (req, res) => {
 // @access  Private (Provider/Admin)
 const createAccommodation = async (req, res) => {
   try {
+    // Normalize location coordinates if provided
+    normalizeLocationCoordinates(req.body);
+
     // Add provider to the accommodation
     req.body.provider = req.user.id;
     
@@ -157,6 +239,8 @@ const updateAccommodation = async (req, res) => {
         message: 'Not authorized to update this accommodation'
       });
     }
+
+    normalizeLocationCoordinates(req.body);
 
     accommodation = await Accommodation.findByIdAndUpdate(
       req.params.id,
@@ -241,6 +325,13 @@ const searchAccommodations = async (req, res) => {
     let filter = { status: 'active' };
     let sortObj = {};
 
+    const parsedLatitude = parseCoordinate(latitude);
+    const parsedLongitude = parseCoordinate(longitude);
+    const parsedRadius = parseCoordinate(radius);
+    const limitNum = Number(limit) > 0 ? Math.min(Number(limit), 50) : 12;
+    const pageNum = Number(page) > 0 ? Number(page) : 1;
+    const skip = (pageNum - 1) * limitNum;
+
     // Text search
     if (q) {
       filter.$or = [
@@ -290,14 +381,16 @@ const searchAccommodations = async (req, res) => {
     }
 
     // Geolocation filter
-    if (latitude && longitude) {
+    if (Number.isFinite(parsedLatitude) && Number.isFinite(parsedLongitude)) {
       filter['location.coordinates'] = {
         $near: {
           $geometry: {
             type: 'Point',
-            coordinates: [parseFloat(longitude), parseFloat(latitude)]
+            coordinates: [parsedLongitude, parsedLatitude]
           },
-          $maxDistance: parseFloat(radius) * 1000 // Convert km to meters
+          ...(Number.isFinite(parsedRadius) && parsedRadius > 0
+            ? { $maxDistance: parsedRadius * 1000 }
+            : {})
         }
       };
     }
@@ -324,8 +417,8 @@ const searchAccommodations = async (req, res) => {
       .populate('provider', 'name profile.avatar')
       .select('-__v')
       .sort(sortObj)
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .limit(limitNum)
+      .skip(skip);
 
     const total = await Accommodation.countDocuments(filter);
 
@@ -333,8 +426,8 @@ const searchAccommodations = async (req, res) => {
       success: true,
       count: accommodations.length,
       total,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page),
+      totalPages: Math.ceil(total / limitNum),
+      currentPage: pageNum,
       data: accommodations,
       searchQuery: {
         q,
@@ -343,7 +436,9 @@ const searchAccommodations = async (req, res) => {
         minRent,
         maxRent,
         amenities,
-        location: latitude && longitude ? { latitude, longitude, radius } : null
+        location: Number.isFinite(parsedLatitude) && Number.isFinite(parsedLongitude)
+          ? { latitude: parsedLatitude, longitude: parsedLongitude, radius: Number.isFinite(parsedRadius) ? parsedRadius : null }
+          : null
       }
     });
   } catch (error) {

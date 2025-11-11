@@ -37,8 +37,20 @@ const accommodationSchema = new mongoose.Schema(
       },
       pincode: String,
       coordinates: {
-        latitude: Number,
-        longitude: Number,
+        type: {
+          type: String,
+          enum: ["Point"],
+          default: "Point",
+        },
+        coordinates: {
+          type: [Number],
+          validate: {
+            validator(value) {
+              return !value || (value.length === 2 && value.every(num => typeof num === "number" && !Number.isNaN(num)));
+            },
+            message: "Coordinates must be an array of [longitude, latitude]",
+          },
+        },
       },
     },
     pricing: {
@@ -186,10 +198,7 @@ const accommodationSchema = new mongoose.Schema(
 );
 
 // Index for location-based queries
-accommodationSchema.index({
-  "location.coordinates.latitude": 1,
-  "location.coordinates.longitude": 1,
-});
+accommodationSchema.index({ "location.coordinates": "2dsphere" });
 accommodationSchema.index({ "location.city": 1 });
 accommodationSchema.index({ type: 1 });
 accommodationSchema.index({ "pricing.rent": 1 });
