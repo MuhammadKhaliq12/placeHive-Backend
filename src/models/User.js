@@ -134,7 +134,6 @@ userSchema.methods.resetLoginAttempts = function() {
   });
 };
 
-userSchema.index({ email: 1 });
 userSchema.index({ role: 1 });
 userSchema.index({ status: 1 });
 

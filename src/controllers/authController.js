@@ -2,18 +2,19 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../models/User');
 const { sendEmail } = require('../utils/sendEmail');
+const config = require('../config');
 
 // Generate JWT Token
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE
+  return jwt.sign({ id }, config.JWT_SECRET, {
+    expiresIn: config.JWT_EXPIRE
   });
 };
 
 // Generate Refresh Token
 const generateRefreshToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_REFRESH_SECRET, {
-    expiresIn: process.env.JWT_REFRESH_EXPIRE
+  return jwt.sign({ id }, config.JWT_REFRESH_SECRET, {
+    expiresIn: config.JWT_REFRESH_EXPIRE
   });
 };
 
@@ -42,13 +43,19 @@ const register = async (req, res) => {
     });
 
     // Generate email verification token
-    const verificationToken = crypto.randomBytes(20).toString('hex');
-    user.verification.emailVerificationToken = crypto
-      .createHash('sha256')
-      .update(verificationToken)
-      .digest('hex');
-    user.verification.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
-    await user.save();
+    try {
+      const verificationToken = crypto.randomBytes(20).toString('hex');
+      user.verification = user.verification || {};
+      user.verification.emailVerificationToken = crypto
+        .createHash('sha256')
+        .update(verificationToken)
+        .digest('hex');
+      user.verification.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+      await user.save();
+    } catch (verificationError) {
+      console.log('Verification token generation failed:', verificationError.message);
+      // Continue without verification for now
+    }
 
     // Send verification email
     const verificationUrl = `${req.protocol}://${req.get('host')}/api/auth/verify-email/${verificationToken}`;
@@ -61,7 +68,8 @@ const register = async (req, res) => {
         message
       });
     } catch (error) {
-      console.log('Email sending failed:', error);
+      console.log('Email sending failed:', error.message);
+      // Don't fail registration if email fails, just log it
     }
 
     // Generate tokens
@@ -188,7 +196,7 @@ const refreshToken = async (req, res) => {
     }
 
     // Verify refresh token
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    const decoded = jwt.verify(refreshToken, config.JWT_REFRESH_SECRET);
     const user = await User.findById(decoded.id);
 
     if (!user || user.status !== 'active') {

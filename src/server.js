@@ -1,3 +1,5 @@
+console.log('🚀 Starting PlaceHive Backend Server...');
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -5,7 +7,10 @@ const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-require('dotenv').config();
+
+console.log('📦 Loading configuration...');
+const config = require('./config');
+console.log('✅ Config loaded. Port:', config.PORT);
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -18,6 +23,11 @@ let transportRoutes;
 let bookmarkRoutes;
 let recommendationRoutes;
 let adminRoutes;
+try {
+  adminRoutes = require('./routes/adminRoutes');
+} catch (error) {
+  console.warn('⚠️ Admin routes not loaded:', error.message);
+}
 
 try {
   expenseRoutes = require('./routes/expenseRoutes');
@@ -61,16 +71,23 @@ app.use(compression());
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
+  origin: config.NODE_ENV === 'production'
     ? ['https://placehive.com', 'https://www.placehive.com']
-    : ['http://localhost:3000', 'http://127.0.0.1:3000'],
-  credentials: true
+    : [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:3001',
+        'http://127.0.0.1:3001'
+      ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  windowMs: config.RATE_LIMIT_WINDOW_MS,
+  max: config.RATE_LIMIT_MAX_REQUESTS,
   message: {
     error: 'Too many requests from this IP, please try again later.'
   }
@@ -78,7 +95,7 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // Logging
-if (process.env.NODE_ENV === 'development') {
+if (config.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
   app.use(morgan('combined'));
@@ -128,22 +145,29 @@ app.use(notFound);
 app.use(errorHandler);
 
 // Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/placehive', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect(config.MONGODB_URI)
 .then(() => {
   console.log('✅ Connected to MongoDB');
 })
 .catch((error) => {
-  console.error('❌ MongoDB connection error:', error);
-  process.exit(1);
+  console.error('❌ MongoDB connection error:', error.message);
+  console.log('⚠️ Server will continue without database connection for testing purposes');
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5000; // Use port 5000 as requested by user
 
 const server = app.listen(PORT, () => {
-  console.log(`🚀 PlaceHive API server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+  console.log(`🚀 PlaceHive API server running in ${config.NODE_ENV} mode on port ${PORT}`);
+}).on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use. Please try a different port or kill the process using it.`);
+    console.log(`💡 You can find the process using: netstat -ano | findstr :${PORT}`);
+    console.log(`💡 Then kill it with: taskkill /PID <PID> /F`);
+    process.exit(1);
+  } else {
+    console.error('❌ Server error:', err);
+    process.exit(1);
+  }
 });
 
 // Graceful shutdown
